@@ -5,17 +5,21 @@ import numpy as np
 from PIL import Image, ImageTk
 
 
-
 PRESET_RULES = {
     "Іскри":    "2/2/25",
     "Комахи":   "23/2/8",
     "Полум'я":  "235678/3468/9",
 }
 
+RECOMMENDED_INIT = {
+    "2/2/25":         ("random", 0.30),
+    "23/2/8":         ("cross", 20),
+    "235678/3468/9":  ("square", 15),
+}
+
 GRID_SIZE = 200
 DISPLAY_SIZE = 640
 DEFAULT_RULE = "23/2/8"
-
 
 
 class GenerationsAutomaton:
@@ -95,7 +99,7 @@ class GenerationsAutomaton:
 
         self.grid = new_grid
         self.iteration += 1
-    
+
     def clear(self):
         self.grid = np.zeros((self.height, self.width), dtype=np.int32)
         self.iteration = 0
@@ -116,11 +120,21 @@ class GenerationsAutomaton:
         self.iteration = 0
         self.initial_grid = self.grid.copy()
 
+    def center_square(self, half_size: int = 15):
+        self.grid = np.zeros((self.height, self.width), dtype=np.int32)
+        cy, cx = self.height // 2, self.width // 2
+        y0, y1 = max(0, cy - half_size), min(self.height, cy + half_size + 1)
+        x0, x1 = max(0, cx - half_size), min(self.width, cx + half_size + 1)
+        self.grid[y0:y1, x0:x1] = 1
+        self.iteration = 0
+        self.initial_grid = self.grid.copy()
+
     def reset_to_start(self):
         self.grid = self.initial_grid.copy()
         self.iteration = 0
 
     def snapshot_as_initial(self):
+        """Зафіксувати поточну сітку як нову точку відліку (ітерація 0)."""
         self.initial_grid = self.grid.copy()
         self.iteration = 0
 
@@ -148,7 +162,6 @@ class GenerationsAutomaton:
         return palette[self.grid]
 
 
-
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -157,7 +170,13 @@ class App(tk.Tk):
         self.resizable(False, False)
 
         self.automaton = GenerationsAutomaton(GRID_SIZE, GRID_SIZE, DEFAULT_RULE)
-        self.automaton.center_cross()
+        init_kind, init_param = RECOMMENDED_INIT.get(DEFAULT_RULE, ("cross", 20))
+        if init_kind == "random":
+            self.automaton.randomize(density=init_param)
+        elif init_kind == "square":
+            self.automaton.center_square(half_size=init_param)
+        else:
+            self.automaton.center_cross(arm_len=init_param)
 
         self.running = False
         self.brush_size = 1
@@ -211,11 +230,19 @@ class App(tk.Tk):
         for name, rule in PRESET_RULES.items():
             tk.Button(
                 preset_row, text=f"{name} ({rule})",
-                command=lambda r=rule: self._apply_rule(r)
+                command=lambda r=rule: self._apply_preset(r)
             ).pack(side="left", padx=2, expand=True, fill="x")
 
         self.rule_info_label = tk.Label(rule_frame, text="", **style_label, justify="left")
         self.rule_info_label.pack(anchor="w", padx=6, pady=(0, 6))
+
+        tk.Label(
+            rule_frame,
+            text=("Порада: кнопки-пресети вище автоматично підставляють\n"
+                  "рекомендований початковий стан для цього правила -\n"
+                  "різні правила по-різному реагують на однаковий засів."),
+            **style_label, justify="left", wraplength=300
+        ).pack(anchor="w", padx=6, pady=(0, 6))
 
         init_frame = tk.LabelFrame(right, text="Початковий стан", bg="#1e1e1e", fg="white",
                                     font=("Segoe UI", 10, "bold"))
@@ -236,8 +263,10 @@ class App(tk.Tk):
 
         tk.Button(init_frame, text="Очистити", command=self._on_clear).pack(fill="x", padx=6, pady=2)
         tk.Button(init_frame, text="Центральний хрест", command=self._on_cross).pack(fill="x", padx=6, pady=2)
+        tk.Button(init_frame, text="Великий квадрат (для «Полум'я»)",
+                  command=self._on_square).pack(fill="x", padx=6, pady=2)
         tk.Button(init_frame, text="Випадкове поле", command=self._on_random).pack(fill="x", padx=6, pady=(2, 6))
-        
+
         evo_frame = tk.LabelFrame(right, text="Еволюція", bg="#1e1e1e", fg="white",
                                    font=("Segoe UI", 10, "bold"))
         evo_frame.pack(fill="x", pady=(0, 10))
@@ -323,6 +352,18 @@ class App(tk.Tk):
         self._update_status()
         self._render()
 
+    def _apply_preset(self, rule_str):
+        self._apply_rule(rule_str)
+        kind, param = RECOMMENDED_INIT.get(rule_str, ("cross", 20))
+        if kind == "random":
+            self.automaton.randomize(density=param)
+        elif kind == "square":
+            self.automaton.center_square(half_size=param)
+        else:
+            self.automaton.center_cross(arm_len=param)
+        self._update_status()
+        self._render()
+
     def _apply_rule_from_entry(self):
         self._apply_rule(self.rule_entry.get())
 
@@ -333,6 +374,11 @@ class App(tk.Tk):
 
     def _on_cross(self):
         self.automaton.center_cross()
+        self._update_status()
+        self._render()
+
+    def _on_square(self):
+        self.automaton.center_square()
         self._update_status()
         self._render()
 
