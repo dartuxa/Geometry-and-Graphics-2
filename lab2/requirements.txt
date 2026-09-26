@@ -1,0 +1,4 @@
+PyQt5==5.15.11
+numpy==2.4.4
+Pillow==12.1.1
+matplotlib==3.10.8
